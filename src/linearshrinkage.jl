@@ -88,11 +88,11 @@ struct LinearShrinkage{T<:LinearShrinkageTarget, S<:Shrinkage} <: CovarianceEsti
     shrinkage::S
     corrected::Bool
     function LinearShrinkage(t::TT, s::SS; corrected=false) where {TT<:LinearShrinkageTarget, SS<:Real}
-        @assert 0 ≤ s ≤ 1 "Shrinkage value should be between 0 and 1"
+        0 ≤ s ≤ 1 || throw(ArgumentError("Shrinkage value should be between 0 and 1. Got $s."))
         new{TT, SS}(t, s, corrected)
     end
     function LinearShrinkage(t::TT, s::Symbol=:auto; corrected=false) where TT <: LinearShrinkageTarget
-        @assert s ∈ [:auto, :lw, :ss, :rblw, :oas] "Shrinkage method not supported"
+        s ∈ (:auto, :lw, :ss, :rblw, :oas) || throw(ArgumentError("Shrinkage method $s not supported."))
         new{TT, Symbol}(t, s, corrected)
     end
 end
@@ -111,7 +111,7 @@ Computed using the method described by `lse`.
 function cov(lse::LinearShrinkage, X::AbstractMatrix{<:Real};
              dims::Int=1, mean=nothing)
 
-    @assert dims ∈ [1, 2] "Argument dims can only be 1 or 2 (given: $dims)"
+    dims ∈ (1, 2) || throw(ArgumentError("Argument dims can only be 1 or 2 (given: $dims)"))
 
     Xc   = (dims == 1) ? copy(X) : copy(transpose(X))
     n, p = size(Xc)
@@ -192,19 +192,10 @@ end
 
 
 """
-    square(x)
-
-Internal function to compute the square of a real number `x`. Defined here
-so it can be used in the other internal function `sumij2`.
-"""
-square(x::Real) = x * x
-
-
-"""
     sumij2(S)
 
 Internal function identical to `sumij` except that it passes the function
-`square` to the sum so that it is the sum of the elements of `S` squared
+`abs2` to the sum so that it is the sum of the elements of `S` squared
 which is computed. This is significantly more efficient than using
 `sumij(S.^2)` for large matrices as it allocates very little.
 
@@ -212,8 +203,8 @@ which is computed. This is significantly more efficient than using
 * Time complexity: ``O(2p^2)``
 """
 function sumij2(S::AbstractMatrix; with_diag=false)
-    acc = sum(square, S)
-    with_diag || return acc - sum(square, diag(S))
+    acc = sum(abs2, S)
+    with_diag || return acc - sum(abs2, diag(S))
     return acc
 end
 
@@ -280,7 +271,7 @@ function linear_shrinkage(::DiagonalUnitVariance, Xc::AbstractMatrix,
         λ   = sumij(rescale!(uccov(Xc²), d), with_diag=true) / γ^2 - ΣS̄²
         λ  /= κ * ΣS̄² - p / κ
     else
-        error("Unsupported shrinkage method for target DiagonalUnitVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target DiagonalUnitVariance: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink(F, S, λ)
@@ -326,18 +317,18 @@ function linear_shrinkage(::DiagonalCommonVariance, Xc::AbstractMatrix,
         λ  /= κ * ΣS̄² - p/κ
     elseif λ == :rblw
         # https://arxiv.org/pdf/0907.4698.pdf equations 17, 19
-        trS² = sum(square, S)
+        trS² = sum(abs2, S)
         tr²S = tr(S)^2
         # note: using corrected or uncorrected S does not change λ
         λ = ((n-2)/n * trS² + tr²S) / ((n+2) * (trS² - tr²S/p))
     elseif λ == :oas
         # https://arxiv.org/pdf/0907.4698.pdf equation 23
-        trS² = sum(square, S)
+        trS² = sum(abs2, S)
         tr²S = tr(S)^2
         # note: using corrected or uncorrected S does not change λ
         λ = ((1.0-2.0/p) * trS² + tr²S) / ((n+1.0-2.0/p) * (trS² - tr²S/p))
     else
-        error("Unsupported shrinkage method for target DiagonalCommonVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target DiagonalCommonVariance: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink(F, S, λ)
@@ -379,7 +370,7 @@ function linear_shrinkage(::DiagonalUnequalVariance, Xc::AbstractMatrix,
         λ   = sumij(rescale!(uccov(Xc²), d)) / γ^2 - ΣS̄²
         λ  /= κ * ΣS̄²
     else
-        error("Unsupported shrinkage method for target DiagonalCommonVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target DiagonalUnequalVariance: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink(F, S, λ)
@@ -429,7 +420,7 @@ function linear_shrinkage(::CommonCovariance, Xc::AbstractMatrix,
         λ   = sumij(rescale!(uccov(Xc²), d), with_diag=true) / γ^2 - ΣS̄²
         λ  /= κ * ΣS̄² - p/κ - κ * sumij(S̄; with_diag=false)^2 / (p * (p - 1))
     else
-        error("Unsupported shrinkage method for target DiagonalCommonVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target CommonCovariance: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink!(F, S, λ)
@@ -479,7 +470,7 @@ function linear_shrinkage(::PerfectPositiveCorrelation, Xc::AbstractMatrix,
         F̄  = target_E(S̄)
         λ  /= sumij2(S̄ - F̄)
     else
-        error("Unsupported shrinkage method for target DiagonalCommonVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target PerfectPositiveCorrelation: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink!(F, S, λ)
@@ -533,7 +524,7 @@ function linear_shrinkage(::ConstantCorrelation, Xc::AbstractMatrix,
         λ   -= r̄ * sum_fij(Xc .* s', S̄, n, κ)
         λ   /= sumij2(S̄ - F̄)
     else
-        error("Unsupported shrinkage method for target DiagonalCommonVariance.")
+        throw(ArgumentError("Unsupported shrinkage method for target ConstantCorrelation: $λ."))
     end
     λ = clamp(λ, 0.0, 1.0)
     return linshrink!(F, S, λ)
